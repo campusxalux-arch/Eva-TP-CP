@@ -1,0 +1,6 @@
+{
+  "name": "Evaluación Teórica para Conductores Particular",
+  "description": "Aplicación web profesional para realizar exámenes teóricos a conductores de vehículos particulares con almacenamiento automático en Google Sheets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
