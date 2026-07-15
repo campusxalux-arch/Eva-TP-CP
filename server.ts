@@ -24,11 +24,23 @@ async function startServer() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  // Helper function to validate URLs
+  const isValidUrl = (url: string | undefined): boolean => {
+    if (!url) return false;
+    try {
+      const parsed = new URL(url.trim());
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
+  };
+
   // API Route: Get Questions
   app.get("/api/questions", async (req, res) => {
-    const scriptUrl = process.env.GOOGLE_SCRIPT_URL || process.env.VITE_GOOGLE_SCRIPT_URL;
+    const rawUrl = process.env.GOOGLE_SCRIPT_URL || process.env.VITE_GOOGLE_SCRIPT_URL;
+    const scriptUrl = rawUrl ? rawUrl.trim() : "";
 
-    if (scriptUrl) {
+    if (isValidUrl(scriptUrl)) {
       try {
         console.log("Fetching questions from Google Apps Script...");
         const response = await fetch(`${scriptUrl}?action=getQuestions`, {
@@ -46,6 +58,10 @@ async function startServer() {
       } catch (error) {
         console.error("Error fetching questions from Google Apps Script, falling back:", error);
       }
+    } else {
+      if (rawUrl) {
+        console.warn(`Invalid GOOGLE_SCRIPT_URL provided: "${rawUrl}". Falling back to local bank.`);
+      }
     }
 
     // Fallback to local high-quality questions
@@ -58,13 +74,14 @@ async function startServer() {
 
   // API Route: Save Results
   app.post("/api/save-results", async (req, res) => {
-    const scriptUrl = process.env.GOOGLE_SCRIPT_URL || process.env.VITE_GOOGLE_SCRIPT_URL;
+    const rawUrl = process.env.GOOGLE_SCRIPT_URL || process.env.VITE_GOOGLE_SCRIPT_URL;
+    const scriptUrl = rawUrl ? rawUrl.trim() : "";
     const resultData = req.body;
 
     console.log("Saving exam results for:", resultData?.userData?.fullName);
 
-    if (!scriptUrl) {
-      console.log("No GOOGLE_SCRIPT_URL configured. Simulating successful save.");
+    if (!isValidUrl(scriptUrl)) {
+      console.log("No valid GOOGLE_SCRIPT_URL configured. Simulating successful save.");
       return res.json({
         success: true,
         demoMode: true,

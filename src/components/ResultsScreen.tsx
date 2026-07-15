@@ -123,20 +123,29 @@ export default function ResultsScreen({
             body: JSON.stringify(payload)
           });
 
-          const data = await response.json();
-          
-          if (response.ok && data.success) {
+          let data: any = null;
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              data = await response.json();
+            } catch (jsonErr) {
+              console.error("Failed to parse JSON response:", jsonErr);
+            }
+          }
+
+          if (response.ok && data && data.success) {
             setSaveStatus("success");
             setSaveMessage(data.demoMode ? data.message : "¡Los resultados han sido guardados automáticamente en Google Sheets!");
             setHasSaved(true);
           } else {
             setSaveStatus("error");
-            setSaveMessage(data.error || "Hubo un error al comunicarse con el servidor.");
+            const errorMsg = data?.error || `Error del servidor (${response.status}): No se pudo completar el guardado de resultados. Asegúrese de que el servidor esté activo.`;
+            setSaveMessage(errorMsg);
           }
         }
       } catch (error: any) {
         setSaveStatus("error");
-        setSaveMessage(error.message || "No se pudo establecer conexión con el servicio de almacenamiento.");
+        setSaveMessage("No se pudo establecer conexión con el servicio de almacenamiento.");
       }
     };
 
