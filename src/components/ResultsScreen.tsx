@@ -31,6 +31,7 @@ export default function ResultsScreen({
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [saveMessage, setSaveMessage] = useState("");
   const [hasSaved, setHasSaved] = useState(false);
+  const [spreadsheetUrl, setSpreadsheetUrl] = useState<string | null>(null);
 
   // 1. Calculate Score (percentage over 100)
   const totalQuestions = correctTotal + incorrectTotal;
@@ -122,7 +123,12 @@ export default function ResultsScreen({
 
         if (response.ok && data && data.success) {
           setSaveStatus("success");
-          setSaveMessage(data.demoMode ? data.message : "¡Los resultados han sido guardados automáticamente!");
+          setSaveMessage(data.demoMode ? data.message : "¡Los resultados han sido guardados exitosamente en Google Sheets!");
+          if (data.data?.spreadsheetUrl) {
+            setSpreadsheetUrl(data.data.spreadsheetUrl);
+          } else if (data.data?.spreadsheetId) {
+            setSpreadsheetUrl(`https://docs.google.com/spreadsheets/d/${data.data.spreadsheetId}`);
+          }
           setHasSaved(true);
         } else {
           setSaveStatus("error");
@@ -216,6 +222,50 @@ export default function ResultsScreen({
         </div>
       </div>
 
+      {/* GOOGLE SHEETS SYNC STATUS CARD */}
+      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-5 flex flex-col gap-3">
+        <div className="flex items-start gap-3 text-left">
+          {saveStatus === "saving" && (
+            <>
+              <RefreshCw className="w-5 h-5 text-blue-600 animate-spin flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-bold text-blue-950">Sincronizando con Google Sheets...</p>
+                <p className="text-[10px] text-gray-500 mt-0.5">Espere un momento mientras se guardan los resultados de su examen.</p>
+              </div>
+            </>
+          )}
+
+          {saveStatus === "success" && (
+            <>
+              <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-xs font-bold text-emerald-950">¡Resultados Guardados!</p>
+                <p className="text-[10px] text-emerald-600 font-medium leading-relaxed mt-0.5">{saveMessage}</p>
+                {spreadsheetUrl && (
+                  <a 
+                    href={spreadsheetUrl} 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="inline-flex items-center gap-1 mt-2 text-[10px] font-black text-emerald-800 hover:text-emerald-950 underline decoration-2 uppercase tracking-wide"
+                  >
+                    Ver Planilla de Google Sheets ↗
+                  </a>
+                )}
+              </div>
+            </>
+          )}
+
+          {saveStatus === "error" && (
+            <>
+              <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-bold text-amber-950">Sincronización Pendiente</p>
+                <p className="text-[10px] text-amber-700 font-medium leading-relaxed mt-0.5">{saveMessage}</p>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* 4. SHARE / QR CODE SECTION */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-5 flex flex-col items-center gap-4 text-center">
