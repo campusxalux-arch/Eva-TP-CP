@@ -3,14 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Header from "./components/Header";
 import RegistrationForm from "./components/RegistrationForm";
 import ExamScreen from "./components/ExamScreen";
 import ResultsScreen from "./components/ResultsScreen";
+import WorkspaceConfig from "./components/WorkspaceConfig";
 import { Question, UserData } from "./types";
 import { QUESTION_BANK } from "./questionsData";
 import { ShieldCheck, Smartphone } from "lucide-react";
+import { User } from "firebase/auth";
 
 type Step = "loading" | "register" | "exam" | "results";
 
@@ -24,6 +26,17 @@ export default function App() {
   const [incorrectTotal, setIncorrectTotal] = useState(0);
   const [timeElapsedSeconds, setTimeElapsedSeconds] = useState(0);
   const [answersLog, setAnswersLog] = useState<{ questionId: number; isCorrect: boolean; moduleId: number }[]>([]);
+
+  // Google Workspace Integration state
+  const [googleUser, setGoogleUser] = useState<User | null>(null);
+  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
+  const [spreadsheetId, setSpreadsheetId] = useState<string | null>(() => {
+    return localStorage.getItem("workspace_spreadsheet_id");
+  });
+  const [documentId, setDocumentId] = useState<string | null>(() => {
+    return localStorage.getItem("workspace_document_id");
+  });
+  const [questionsSource, setQuestionsSource] = useState<string>("Banco Local");
 
   // Fetch questions from the API
   useEffect(() => {
@@ -76,6 +89,34 @@ export default function App() {
     setStep("register");
   };
 
+  const handleAuthChanged = useCallback((user: User | null, token: string | null) => {
+    setGoogleUser(user);
+    setGoogleAccessToken(token);
+  }, []);
+
+  const handleSpreadsheetIdChanged = useCallback((id: string | null) => {
+    setSpreadsheetId(id);
+    if (id) {
+      localStorage.setItem("workspace_spreadsheet_id", id);
+    } else {
+      localStorage.removeItem("workspace_spreadsheet_id");
+    }
+  }, []);
+
+  const handleDocumentIdChanged = useCallback((id: string | null) => {
+    setDocumentId(id);
+    if (id) {
+      localStorage.setItem("workspace_document_id", id);
+    } else {
+      localStorage.removeItem("workspace_document_id");
+    }
+  }, []);
+
+  const handleQuestionsLoaded = useCallback((questions: Question[], source: string) => {
+    setAllQuestions(questions);
+    setQuestionsSource(source);
+  }, []);
+
   return (
     <div className="min-h-screen bg-slate-100 flex justify-center items-center sm:p-4 md:p-6 overflow-y-auto">
       {/* Mobile Viewport Container Simulator with Sleek physical borders */}
@@ -92,7 +133,7 @@ export default function App() {
         <Header />
 
         {/* Main View Area */}
-        <main className="flex-1 p-4 flex flex-col">
+        <main className="flex-1 p-4 flex flex-col overflow-y-auto max-h-[calc(100vh-140px)] sm:max-h-[660px]">
           {step === "loading" && (
             <div className="flex-1 flex flex-col items-center justify-center py-20 gap-4">
               <div className="w-12 h-12 rounded-full border-4 border-blue-900 border-t-yellow-400 animate-spin"></div>
@@ -101,7 +142,17 @@ export default function App() {
           )}
 
           {step === "register" && (
-            <RegistrationForm onStartExam={handleStartExam} />
+            <div className="flex flex-col gap-6">
+              <RegistrationForm onStartExam={handleStartExam} />
+              <WorkspaceConfig
+                onQuestionsLoaded={handleQuestionsLoaded}
+                onAuthChanged={handleAuthChanged}
+                onSpreadsheetIdChanged={handleSpreadsheetIdChanged}
+                currentSpreadsheetId={spreadsheetId}
+                currentDocumentId={documentId}
+                onDocumentIdChanged={handleDocumentIdChanged}
+              />
+            </div>
           )}
 
           {step === "exam" && userData && (
@@ -120,6 +171,8 @@ export default function App() {
               timeElapsedSeconds={timeElapsedSeconds}
               answersLog={answersLog}
               onRestart={handleRestart}
+              googleAccessToken={googleAccessToken}
+              spreadsheetId={spreadsheetId}
             />
           )}
         </main>
@@ -128,16 +181,18 @@ export default function App() {
         <footer className="bg-white p-4 border-t border-slate-200 flex justify-between items-center text-left">
           <div className="flex items-center gap-4">
             <div className="flex flex-col">
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Conectado a:</span>
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Planilla de Guardado:</span>
               <span className="text-[11px] font-semibold flex items-center gap-1 text-emerald-600">
                 <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                Sheets API
+                {spreadsheetId ? "Conectada" : "Local/Demo"}
               </span>
             </div>
             <div className="w-px h-6 bg-slate-200"></div>
             <div className="flex flex-col">
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Banco de Preguntas:</span>
-              <span className="text-[11px] font-semibold text-slate-600">4 Módulos</span>
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Preguntas:</span>
+              <span className="text-[11px] font-semibold text-slate-600 truncate max-w-[100px]" title={questionsSource}>
+                {questionsSource}
+              </span>
             </div>
           </div>
           

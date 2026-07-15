@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 
+import { appendResultsToSheet } from "../lib/workspaceApi";
+
 interface ResultsScreenProps {
   userData: UserData;
   correctTotal: number;
@@ -18,6 +20,8 @@ interface ResultsScreenProps {
   timeElapsedSeconds: number;
   answersLog: { questionId: number; isCorrect: boolean; moduleId: number }[];
   onRestart: () => void;
+  googleAccessToken?: string | null;
+  spreadsheetId?: string | null;
 }
 
 export default function ResultsScreen({
@@ -26,7 +30,9 @@ export default function ResultsScreen({
   incorrectTotal,
   timeElapsedSeconds,
   answersLog,
-  onRestart
+  onRestart,
+  googleAccessToken,
+  spreadsheetId
 }: ResultsScreenProps) {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [saveMessage, setSaveMessage] = useState("");
@@ -101,32 +107,41 @@ export default function ResultsScreen({
       };
 
       try {
-        const response = await fetch("/api/save-results", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(payload)
-        });
-
-        const data = await response.json();
-        
-        if (response.ok && data.success) {
+        if (googleAccessToken && spreadsheetId) {
+          console.log("Directly appending to user Google Sheet...");
+          await appendResultsToSheet(googleAccessToken, spreadsheetId, payload);
           setSaveStatus("success");
-          setSaveMessage(data.demoMode ? data.message : "¡Los resultados han sido guardados automáticamente en Google Sheets!");
+          setSaveMessage("Los resultados han sido guardados de manera exitosa directamente en su propia planilla de Google Sheets conectada.");
           setHasSaved(true);
         } else {
-          setSaveStatus("error");
-          setSaveMessage(data.error || "Hubo un error al comunicarse con el servidor.");
+          // Standard server-side fallback
+          const response = await fetch("/api/save-results", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+          });
+
+          const data = await response.json();
+          
+          if (response.ok && data.success) {
+            setSaveStatus("success");
+            setSaveMessage(data.demoMode ? data.message : "¡Los resultados han sido guardados automáticamente en Google Sheets!");
+            setHasSaved(true);
+          } else {
+            setSaveStatus("error");
+            setSaveMessage(data.error || "Hubo un error al comunicarse con el servidor.");
+          }
         }
       } catch (error: any) {
         setSaveStatus("error");
-        setSaveMessage(error.message || "No se pudo establecer conexión con la base de datos.");
+        setSaveMessage(error.message || "No se pudo establecer conexión con el servicio de almacenamiento.");
       }
     };
 
     saveExamResults();
-  }, [hasSaved]);
+  }, [hasSaved, googleAccessToken, spreadsheetId]);
 
   // Current page URL to generate dynamic QR Code
   const [currentUrl, setCurrentUrl] = useState("https://vercelexample.com");
@@ -260,9 +275,19 @@ export default function ResultsScreen({
           {saveStatus === "success" && (
             <>
               <CheckCircle2 className="w-6 h-6 text-emerald-500 flex-shrink-0" />
-              <div>
+              <div className="flex-1 text-left">
                 <p className="text-xs font-bold text-emerald-950">¡Resultados Sincronizados!</p>
                 <p className="text-[10px] text-emerald-600 font-medium">{saveMessage}</p>
+                {spreadsheetId && (
+                  <a 
+                    href={`https://docs.google.com/spreadsheets/d/${spreadsheetId}`} 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="inline-flex items-center gap-1 mt-1.5 text-[10px] font-black text-emerald-800 hover:text-emerald-950 underline decoration-2 uppercase tracking-wide"
+                  >
+                    Abrir Planilla de Google Sheets ↗
+                  </a>
+                )}
               </div>
             </>
           )}
