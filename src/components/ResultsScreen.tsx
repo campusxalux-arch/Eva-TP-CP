@@ -11,8 +11,6 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 
-import { appendResultsToSheet } from "../lib/workspaceApi";
-
 interface ResultsScreenProps {
   userData: UserData;
   correctTotal: number;
@@ -20,8 +18,6 @@ interface ResultsScreenProps {
   timeElapsedSeconds: number;
   answersLog: { questionId: number; isCorrect: boolean; moduleId: number }[];
   onRestart: () => void;
-  googleAccessToken?: string | null;
-  spreadsheetId?: string | null;
 }
 
 export default function ResultsScreen({
@@ -30,9 +26,7 @@ export default function ResultsScreen({
   incorrectTotal,
   timeElapsedSeconds,
   answersLog,
-  onRestart,
-  googleAccessToken,
-  spreadsheetId
+  onRestart
 }: ResultsScreenProps) {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [saveMessage, setSaveMessage] = useState("");
@@ -107,41 +101,33 @@ export default function ResultsScreen({
       };
 
       try {
-        if (googleAccessToken && spreadsheetId) {
-          console.log("Directly appending to user Google Sheet...");
-          await appendResultsToSheet(googleAccessToken, spreadsheetId, payload);
+        // Standard server-side fallback
+        const response = await fetch("/api/save-results", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        let data: any = null;
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          try {
+            data = await response.json();
+          } catch (jsonErr) {
+            console.error("Failed to parse JSON response:", jsonErr);
+          }
+        }
+
+        if (response.ok && data && data.success) {
           setSaveStatus("success");
-          setSaveMessage("Los resultados han sido guardados de manera exitosa directamente en su propia planilla de Google Sheets conectada.");
+          setSaveMessage(data.demoMode ? data.message : "¡Los resultados han sido guardados automáticamente!");
           setHasSaved(true);
         } else {
-          // Standard server-side fallback
-          const response = await fetch("/api/save-results", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify(payload)
-          });
-
-          let data: any = null;
-          const contentType = response.headers.get("content-type");
-          if (contentType && contentType.includes("application/json")) {
-            try {
-              data = await response.json();
-            } catch (jsonErr) {
-              console.error("Failed to parse JSON response:", jsonErr);
-            }
-          }
-
-          if (response.ok && data && data.success) {
-            setSaveStatus("success");
-            setSaveMessage(data.demoMode ? data.message : "¡Los resultados han sido guardados automáticamente en Google Sheets!");
-            setHasSaved(true);
-          } else {
-            setSaveStatus("error");
-            const errorMsg = data?.error || `Error del servidor (${response.status}): No se pudo completar el guardado de resultados. Asegúrese de que el servidor esté activo.`;
-            setSaveMessage(errorMsg);
-          }
+          setSaveStatus("error");
+          const errorMsg = data?.error || `Error del servidor (${response.status}): No se pudo completar el guardado de resultados.`;
+          setSaveMessage(errorMsg);
         }
       } catch (error: any) {
         setSaveStatus("error");
@@ -150,7 +136,7 @@ export default function ResultsScreen({
     };
 
     saveExamResults();
-  }, [hasSaved, googleAccessToken, spreadsheetId]);
+  }, [hasSaved]);
 
   // Current page URL to generate dynamic QR Code
   const [currentUrl, setCurrentUrl] = useState("https://vercelexample.com");
@@ -230,88 +216,6 @@ export default function ResultsScreen({
         </div>
       </div>
 
-      {/* 2. MODULAR BREAKDOWN - Styled with custom light cards */}
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-5 flex flex-col gap-4">
-        <h3 className="text-xs font-black text-blue-950 uppercase tracking-widest border-b border-slate-100 pb-2">
-          Desempeño Detallado por Módulos
-        </h3>
-        <p className="text-xs text-slate-400 -mt-1 leading-relaxed">
-          Se requiere un mínimo de 8 respuestas correctas (80%) para aprobar de manera individual cada módulo.
-        </p>
-
-        <div className="flex flex-col gap-3 mt-1">
-          {moduleResults.map((mod) => (
-            <div 
-              key={mod.moduleId} 
-              className={`p-3.5 rounded-2xl border flex flex-col gap-2 ${
-                mod.isApproved ? "bg-emerald-50/40 border-emerald-100/70" : "bg-orange-50/40 border-orange-100/70"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-slate-700 uppercase leading-snug max-w-[70%]">
-                  Módulo {mod.moduleId}: {mod.moduleName}
-                </span>
-                <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-full border ${
-                  mod.isApproved 
-                    ? "bg-emerald-100 text-emerald-800 border-emerald-200" 
-                    : "bg-orange-100 text-orange-800 border-orange-200"
-                }`}>
-                  {mod.isApproved ? "Aprobado" : "No aprobado"}
-                </span>
-              </div>
-              <div className="flex items-center gap-4 text-xs font-semibold text-slate-500">
-                <span className="text-emerald-700">Correctas: {mod.correctCount} / 10</span>
-                <span className="text-orange-700">Incorrectas: {mod.incorrectCount} / 10</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* 3. GOOGLE SHEETS SYNC STATUS */}
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-4 flex flex-col gap-3">
-        <div className="flex items-center gap-3">
-          {saveStatus === "saving" && (
-            <>
-              <RefreshCw className="w-5 h-5 text-blue-600 animate-spin flex-shrink-0" />
-              <div>
-                <p className="text-xs font-bold text-blue-950">Sincronizando con Google Sheets...</p>
-                <p className="text-[10px] text-gray-500">Espere un momento, enviando datos de manera segura.</p>
-              </div>
-            </>
-          )}
-
-          {saveStatus === "success" && (
-            <>
-              <CheckCircle2 className="w-6 h-6 text-emerald-500 flex-shrink-0" />
-              <div className="flex-1 text-left">
-                <p className="text-xs font-bold text-emerald-950">¡Resultados Sincronizados!</p>
-                <p className="text-[10px] text-emerald-600 font-medium">{saveMessage}</p>
-                {spreadsheetId && (
-                  <a 
-                    href={`https://docs.google.com/spreadsheets/d/${spreadsheetId}`} 
-                    target="_blank" 
-                    rel="noreferrer" 
-                    className="inline-flex items-center gap-1 mt-1.5 text-[10px] font-black text-emerald-800 hover:text-emerald-950 underline decoration-2 uppercase tracking-wide"
-                  >
-                    Abrir Planilla de Google Sheets ↗
-                  </a>
-                )}
-              </div>
-            </>
-          )}
-
-          {saveStatus === "error" && (
-            <>
-              <AlertTriangle className="w-6 h-6 text-amber-500 flex-shrink-0" />
-              <div>
-                <p className="text-xs font-bold text-amber-950">Sincronización Pendiente o en Demostración</p>
-                <p className="text-[10px] text-amber-700 font-medium">{saveMessage}</p>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
 
       {/* 4. SHARE / QR CODE SECTION */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-5 flex flex-col items-center gap-4 text-center">
