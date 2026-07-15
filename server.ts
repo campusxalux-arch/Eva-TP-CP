@@ -24,26 +24,83 @@ async function startServer() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  // Helper function to clean and retrieve the Google Script URL
+  const getScriptUrl = (): string => {
+    const rawUrl = process.env.GOOGLE_SCRIPT_URL || process.env.VITE_GOOGLE_SCRIPT_URL;
+    if (!rawUrl) return "";
+    return rawUrl.trim().replace(/^["']|["']$/g, "");
+  };
+
   // Helper function to validate URLs
   const isValidUrl = (url: string | undefined): boolean => {
     if (!url) return false;
     try {
-      const parsed = new URL(url.trim());
+      const parsed = new URL(url);
       return parsed.protocol === "http:" || parsed.protocol === "https:";
     } catch {
       return false;
     }
   };
 
+  // Robust fetch helper that manually handles 301/302 redirects for Google Apps Script
+  const fetchWithRedirects = async (
+    initialUrl: string,
+    options: {
+      method: string;
+      headers?: Record<string, string>;
+      body?: string;
+    }
+  ) => {
+    let currentUrl = initialUrl;
+    let method = options.method;
+    let headers = { ...options.headers };
+    let body = options.body;
+    let attempts = 0;
+    const maxRedirects = 5;
+
+    while (attempts < maxRedirects) {
+      console.log(`[Fetch] ${method} to ${currentUrl}`);
+      const response = await fetch(currentUrl, {
+        method,
+        headers,
+        body,
+        redirect: "manual"
+      });
+
+      console.log(`[Fetch] Response status: ${response.status}`);
+
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        if (location) {
+          currentUrl = new URL(location, currentUrl).toString();
+          attempts++;
+          
+          // Switch to GET for the redirected location (standard browser/redirect behavior for POST)
+          method = "GET";
+          body = undefined;
+          
+          // Retain appropriate headers
+          const acceptHeader = headers["Accept"] || headers["accept"];
+          headers = {};
+          if (acceptHeader) {
+            headers["Accept"] = acceptHeader;
+          }
+          continue;
+        }
+      }
+      return response;
+    }
+    throw new Error("Too many redirects");
+  };
+
   // API Route: Get Questions
   app.get("/api/questions", async (req, res) => {
-    const rawUrl = process.env.GOOGLE_SCRIPT_URL || process.env.VITE_GOOGLE_SCRIPT_URL;
-    const scriptUrl = rawUrl ? rawUrl.trim() : "";
+    const scriptUrl = getScriptUrl();
 
     if (isValidUrl(scriptUrl)) {
       try {
-        console.log("Fetching questions from Google Apps Script...");
-        const response = await fetch(`${scriptUrl}?action=getQuestions`, {
+        console.log("Fetching questions from Google Apps Script:", scriptUrl);
+        const response = await fetchWithRedirects(`${scriptUrl}?action=getQuestions`, {
           method: "GET",
           headers: { "Accept": "application/json" }
         });
@@ -59,6 +116,7 @@ async function startServer() {
         console.error("Error fetching questions from Google Apps Script, falling back:", error);
       }
     } else {
+      const rawUrl = process.env.GOOGLE_SCRIPT_URL || process.env.VITE_GOOGLE_SCRIPT_URL;
       if (rawUrl) {
         console.warn(`Invalid GOOGLE_SCRIPT_URL provided: "${rawUrl}". Falling back to local bank.`);
       }
@@ -74,8 +132,7 @@ async function startServer() {
 
   // API Route: Save Results
   app.post("/api/save-results", async (req, res) => {
-    const rawUrl = process.env.GOOGLE_SCRIPT_URL || process.env.VITE_GOOGLE_SCRIPT_URL;
-    const scriptUrl = rawUrl ? rawUrl.trim() : "";
+    const scriptUrl = getScriptUrl();
     const resultData = req.body;
 
     console.log("Saving exam results for:", resultData?.userData?.fullName);
@@ -91,7 +148,7 @@ async function startServer() {
 
     try {
       console.log("Forwarding results to Google Apps Script:", scriptUrl);
-      const response = await fetch(scriptUrl, {
+      const response = await fetchWithRedirects(scriptUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
